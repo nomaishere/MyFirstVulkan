@@ -61,9 +61,12 @@ private:
 
 	VkInstance instance;
 	VkDebugUtilsMessengerEXT debugMessenger;
-	// VkPhysicalDevice는 VkInstance가 destroy될때 같이 implicitly하게 destroy됨. 따라서 별도의 cleanup 미필요
+	// VkPhysicalDevice는 VkInstance가 destroy될때 같이 implicit하게 destroy됨. 따라서 별도의 cleanup 미필요
 	VkPhysicalDevice physicalDevice = VK_NULL_HANDLE; 
-	
+	VkDevice device;
+	// Queue는 logical device 생성 시 자동으로 생성되지만, Graphics Queue handle은 따로 필요
+	// Device Queue들은 device가 destroy될때 implicitgkrp destroy됨
+	VkQueue graphicsQueue;
 
 	// GLFW를 통해 window 생성
 	void initWindow() {
@@ -80,6 +83,7 @@ private:
 		createInstance();
 		setupDebugMessenger();
 		pickPhysicalDevice();
+		createLogicalDevice();
 	}
 
 	void mainLoop() {
@@ -94,6 +98,7 @@ private:
 		}
 
 		vkDestroyInstance(instance, nullptr);
+		vkDestroyDevice(device, nullptr);
 
 		glfwDestroyWindow(window);
 
@@ -212,6 +217,43 @@ private:
 		}
 		
 		return indices;
+	}
+
+	void createLogicalDevice() {
+		QueueFamilyIndices indices = findQueueFamilies(physicalDevice);
+
+		VkDeviceQueueCreateInfo queueCreateInfo{};
+		queueCreateInfo.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+		queueCreateInfo.queueFamilyIndex = indices.graphicsFamily.value();
+		queueCreateInfo.queueCount = 1;
+
+		float queuePriority = 1.0f; // command buffer 실행 스케줄링에 영향을 줄 수 있는 Queue의 우선순위. 이것은 Queue가 한개만 있어도 꼭 explicit되야 함
+		queueCreateInfo.pQueuePriorities = &queuePriority;
+
+		VkPhysicalDeviceFeatures deviceFeatures{};
+
+		VkDeviceCreateInfo createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
+
+		createInfo.pQueueCreateInfos = &queueCreateInfo;
+		createInfo.queueCreateInfoCount = 1;
+
+		createInfo.pEnabledFeatures = &deviceFeatures;
+
+		createInfo.enabledExtensionCount = 0;
+		if (enableValidationLayers) {
+			createInfo.enabledLayerCount = static_cast<uint32_t>(validationLayers.size());
+			createInfo.ppEnabledLayerNames = validationLayers.data();
+		}
+		else {
+			createInfo.enabledLayerCount = 0;
+		}
+
+		if (vkCreateDevice(physicalDevice, &createInfo, nullptr, &device) != VK_SUCCESS) {
+			throw std::runtime_error("failed to create logical device!");
+		}
+
+		vkGetDeviceQueue(device, indices.graphicsFamily.value(), 0, &graphicsQueue);
 	}
 
 	std::vector<const char*> getRequiredExtensions() {
